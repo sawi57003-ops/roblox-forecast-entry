@@ -239,9 +239,20 @@ def build(reads, places):
             for j in range(1, MAX_RANK + 1):
                 acc[j] += arr[j] * wt / 72.0
         final = [0.0] * (MAX_RANK + 1)
+        # If the transition model is empty (history too short for any 24h pair),
+        # d24/d48/d72 are all zeros and acc carries only the 12/72 current-rank
+        # mass: fall back to the histogram alone instead of letting the blend
+        # halve every probability. (Found by testing a 1-read history: place-1
+        # sums were 0.36 instead of ~0.92 before this fix.)
+        bt = BLEND_TRANS if (sum(d24) + sum(d48) + sum(d72)) > 0 else 0.0
         for j in range(1, MAX_RANK + 1):
             hv = hist_s[j] if hist_s else 0.0
-            final[j] = BLEND_TRANS * acc[j] + (1 - BLEND_TRANS) * hv
+            final[j] = bt * acc[j] + (1 - bt) * hv
+        # NOTE (13 Nov revision): empirical-Bayes shrinkage of the (band, decile)
+        # transition cells toward the band distribution (prior m = 5..80) was
+        # tested and REJECTED: practice improved slightly (-35.43 -> -35.32)
+        # but the recent window got worse (-35.53 -> -36.84 at m=80). The model
+        # stays at the grid-best constants above (half-life 8h, blend 0.5).
         born = created.get(uid) or first_seen.get(uid)
         if born:
             hours_left = _hours(t_now, born + timedelta(days=AGE_DAYS))
